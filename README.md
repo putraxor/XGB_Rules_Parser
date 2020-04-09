@@ -1,5 +1,5 @@
 # XGB_Rules_Parser
-Parse XGB Classifier Rules to Dart Code
+Parse XGB Classifier Rules to Dart Code. Feel free to pull request if you want to port this code to another programming languange
 
 ## How to use
 - Dumps XGB model to json `model._Booster.dump_model('xgb.json', dump_format='json')`
