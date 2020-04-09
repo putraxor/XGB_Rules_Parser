@@ -8,6 +8,9 @@ parseRule(String xgbFile, String fileCode, List<String> clazz) {
   var parameters = <String, String>{};
   var ids = [];
   traverse(m, int c, String parentId) {
+    if (parentId.startsWith('>')) {
+      parentId = parentId.substring(1);
+    }
     String code;
     if (m['leaf'] != null) {
       var id = 'R${ruleId.toString().padLeft(2, '0')}_${clazz[c]}';
@@ -20,14 +23,19 @@ parseRule(String xgbFile, String fileCode, List<String> clazz) {
       code = 'return ${json.encode(ret)};';
       ruleId++;
     } else {
-      code = "${m['split']}<${m['split_condition']}";
+      var splits = parentId.split('>');
+      if (splits.length > 1) {
+        var realParentId = splits[splits.length - 2];
+        var isYes = nodes[realParentId]['yes'] == m['nodeid'].toString();
+        var op = isYes ? '<' : '>=';
+        code = "${m['split']}${op}${m['split_condition']}";
+      } else {
+        code = "${m['split']}<${m['split_condition']}";
+      }
       parameters[m['split'].toString()] =
           m['split_condition'].runtimeType.toString();
     }
     parentId = '${parentId}>${m['nodeid']}';
-    if (parentId.startsWith('>')) {
-      parentId = parentId.substring(1);
-    }
     nodes[m['nodeid'].toString()] = {
       'id': m['nodeid'],
       'split': m['split'],
@@ -49,7 +57,6 @@ parseRule(String xgbFile, String fileCode, List<String> clazz) {
   traverse(models[0], 0, '');
   // print(json.encode(nodes));
   var leafs = nodes.values.where((it) => it['leaf'] != null).toList();
-  var space = '  ';
   var lines = [];
   var ruleIds = ids.toSet().toList();
   var funParams = [];
@@ -64,17 +71,24 @@ parseRule(String xgbFile, String fileCode, List<String> clazz) {
   });
   lines.add('/// Returns one of $ruleIds');
   lines.add('Map getDecision(${funParams.join(', ')}){');
-  var hasCondition = false;
-  for (var l in leafs) {
+
+  for (var i = 0; i < leafs.length; i++) {
+    var l = leafs[i];
     var flows = l['flow'].toString().split('>');
+    var currentFlows = flows.join('');
     var ret = nodes[flows.last]['code'];
     flows.removeLast();
-    var conditions = flows.map((it) => nodes[it]['code']).join(' && ');
-    var ifCode = !hasCondition ? 'if ' : 'else if';
-    lines.add('$ifCode($conditions) {\n$space$space$space$ret\n$space}');
-    hasCondition = true;
+    var isNextSameRule = false;
+    if (i != leafs.length - 1) {
+      var nextFlows = leafs[i + 1]['flow'].toString().split('>').join('');
+      isNextSameRule = currentFlows == nextFlows;
+    }
+    if (ret.contains(clazz.first) && isNextSameRule) flows.removeLast();
+    var conditions = flows.map((it) => nodes[it]['code']).toList();
+    lines.add('if(${conditions.join('&&')}) {$ret}');
   }
-  lines.add('$space return {};');
+
+  lines.add(' return null;');
   lines.add('}');
   print(lines.join('\n'));
   File(fileCode).writeAsStringSync(lines.join('\n'));
